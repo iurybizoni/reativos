@@ -1,0 +1,314 @@
+#include "sdl.ceu"
+
+#define BLOCK_H 20
+#define BLOCK_W 20
+
+input void SDL_REDRAW;
+input void SDL_QUIT;
+input _SDL_MouseButtonEvent* SDL_MOUSEBUTTONDOWN;
+
+
+var int win_w;
+var int win_h;
+var _SDL_Window* win;
+var int interval = 5000;
+
+
+    finalize
+        win = _SDL_CreateWindow("mini jogo",
+                            0, 0, 640, 480, _SDL_WINDOW_SHOWN);
+    with
+        _SDL_DestroyWindow(win);
+    end
+
+_assert(win != null);
+
+_SDL_GetWindowSize(win, &win_w, &win_h);
+
+native do
+	SDL_Renderer* REN = NULL;
+end
+
+    finalize
+        _REN = _SDL_CreateRenderer(win, -1, 0);
+    with
+        _SDL_DestroyRenderer(_REN);
+    end
+
+var _SDL_Rect bg;
+    bg.w = win_w;
+    bg.h = win_h;
+    bg.x = 0;
+    bg.y = 0;
+
+var _SDL_Color bg_clr;
+    bg_clr.r = 0xFF;
+    bg_clr.g = 0xFF;
+    bg_clr.b = 0xFF;
+
+
+interface Global with
+	var int score;
+	event void kill;
+end
+
+var int score=0;
+event void kill;
+
+/* Initializing the targets */
+
+class Rect with
+	var _SDL_Rect target;
+	var int speed;          //controls the speed
+	var int targetId;       //indicates what sort of target is spawning
+	var int button;         //indicates what mouse button the player must click
+	var int clicks;         //indicates the amount of required clicks
+
+do
+
+	/*red target*/
+	var _SDL_Color clr;
+        clr.r = 0xFF;
+        clr.g = 0x00;
+        clr.b = 0x00;
+	var int checkLeftRange = 640/2-BLOCK_W-60; //if the target is within range it can be destroyed
+	var int checkRightRange = 640/2-BLOCK_W-10;  //if the target is within range it can be destroyed
+	var int checkCol = 640/2-30;                   //should the target hit the black block, the game is over
+	var int incr = 1;
+	/*blue target*/
+	if targetId == 1 then
+		checkLeftRange = 640/2+10;
+		checkRightRange = 640/2+60;
+		checkCol = 640/2+10;
+		incr = -1;
+		clr.r = 0x00;
+		clr.g = 0x00;
+		clr.b = 0xFF;
+	end
+	/*aqua target*/
+	if targetId == 2 then
+		checkLeftRange = 640/2+10;
+		checkRightRange = 640/2+60;
+		checkCol = 640/2+10;
+		incr = -1;
+		clr.r = 0x00;
+		clr.g = 0xFF;
+		clr.b = 0xFF;
+	end
+	/*green target*/
+	if targetId == 3 then
+		clr.r = 0x00;
+		clr.g = 0xFF;
+		clr.b = 0x00;
+	end
+
+	par/or do
+		loop do
+			par/or do
+
+		        await (2000/this.speed) ms;
+		        target.x = target.x + incr;      //move the blocks
+     			with
+
+				if this.target.x == checkCol then
+					emit global:kill;
+					await FOREVER;
+				else
+					var _SDL_MouseButtonEvent* but;
+					but = await SDL_MOUSEBUTTONDOWN;
+					if but:button == this.button and but:clicks == this.clicks then
+		
+						if this.target.x >= checkLeftRange and this.target.x <= checkRightRange then
+							
+							global:score = global:score + 1;
+							_printf("combo: %d\n",global:score);
+							break;
+
+						end
+					end
+		   		end
+			end		
+		end
+    with
+	    loop do
+	        await SDL_REDRAW;
+	        _SDL_SetRenderDrawColor(_REN, clr.r,clr.g,clr.b,0);
+            _SDL_RenderFillRect(_REN, &target);
+	    end
+    end
+end
+
+/*Black block*/
+var _SDL_Rect block;
+
+	block.w = BLOCK_W;
+    block.h = 105;
+	block.x = win_w/2-10;
+	block.y = 230;
+
+
+var _SDL_Color blockColor;
+    blockColor.r = 0x00;
+    blockColor.g = 0x00;
+    blockColor.b = 0x00;
+
+/* Range indicators*/
+var _SDL_Rect redRange;
+
+	redRange.w = 50;
+	redRange.h = 5;
+	redRange.x = win_w/2-60;
+	redRange.y = 330;
+
+var _SDL_Rect blueRange;
+
+	blueRange.w = 50;
+	blueRange.h = 5;
+	blueRange.x = (win_w/2)+10;
+	blueRange.y = 330;
+
+var _SDL_Rect greenRange;
+
+	greenRange.w = 50;
+	greenRange.h = 5;
+	greenRange.x = win_w/2-60;
+	greenRange.y = 230;
+
+var _SDL_Rect aquaRange;
+
+	aquaRange.w = 50;
+	aquaRange.h = 5;
+	aquaRange.x = win_w/2+10;
+	aquaRange.y = 230;
+
+_srand(_time(null));
+
+_SDL_SetRenderDrawColor(_REN, 0xFF,0xFF,0xFF,0x00);
+_SDL_RenderFillRect(_REN, null);
+
+/*GAME BEGINS */
+
+par/or do
+
+			await SDL_QUIT;
+
+with
+
+	await global:kill;
+
+with
+
+	loop do
+		await SDL_REDRAW;
+
+		_SDL_SetRenderDrawColor(_REN, 0xFF,0xFF,0xFF,0);
+        _SDL_RenderFillRect(_REN, &bg);
+
+	end
+
+with
+
+		do  /*red targets spawn*/
+			pool Rect[] rs;
+			loop do
+				await (500+_rand()%interval) ms;
+                spawn Rect in rs with
+					this.targetId = 00;
+                    this.target.x = 00;
+                    this.target.y = 300;
+                    this.target.w = BLOCK_W;
+                    this.target.h = BLOCK_H;
+                    this.speed    = 10 + _rand()%200;
+					this.button = _SDL_BUTTON_LEFT;
+					this.clicks = 1;
+                end;
+			end
+		end
+
+
+with
+
+
+		do  /*blue targets spawn*/
+            pool Rect[] rs;
+            loop do
+				await (500+_rand()%interval) ms;
+                spawn Rect in rs with
+					this.targetId = 1;
+                    this.target.x = win_w-20;
+                    this.target.y = 300;
+                    this.target.w = BLOCK_W;
+                    this.target.h = BLOCK_H;
+                    this.speed    = 10 + _rand()%200;
+					this.button = _SDL_BUTTON_RIGHT;
+					this.clicks = 1;
+				end;
+            end
+        end
+
+
+with
+
+		do  /*aqua targets spawn*/
+            pool Rect[] rs;
+            loop do
+				await (500+_rand()%interval) ms;
+                spawn Rect in rs with
+					this.targetId = 2;
+                    this.target.x = win_w-BLOCK_W;
+                    this.target.y = 250;
+                    this.target.w = BLOCK_W;
+                    this.target.h = BLOCK_H;
+                    this.speed    = 10 + _rand()%100;
+					this.button = _SDL_BUTTON_RIGHT;
+					this.clicks = 2;
+				end;
+            end
+        end
+
+with
+
+
+		do  /*green targets spawn*/
+            pool Rect[] rs;
+            loop do
+				await (500+_rand()%interval) ms;
+                spawn Rect in rs with
+					this.targetId = 3;
+                    this.target.x = 00;
+                    this.target.y = 250;
+                    this.target.w = BLOCK_W;
+                    this.target.h = BLOCK_H;
+                    this.speed    = 10 + _rand()%100;
+					this.button = _SDL_BUTTON_LEFT;
+					this.clicks = 2;
+				end;
+            end
+        end
+
+
+with
+
+	loop do
+		await SDL_REDRAW;
+
+		_SDL_SetRenderDrawColor(_REN, blockColor.r,blockColor.b,blockColor.g,0);
+        _SDL_RenderFillRect(_REN, &block);
+
+		_SDL_SetRenderDrawColor(_REN, 0xFF,0x00,0x00,0);
+        _SDL_RenderFillRect(_REN, &redRange);
+
+		_SDL_SetRenderDrawColor(_REN, 0x00,0x00,0xFF,0);
+        _SDL_RenderFillRect(_REN, &blueRange);
+
+		_SDL_SetRenderDrawColor(_REN, 0x00,0xFF,0x00,0);
+        _SDL_RenderFillRect(_REN, &greenRange);
+		
+		_SDL_SetRenderDrawColor(_REN, 0x00,0xFF,0xFF,0);
+        _SDL_RenderFillRect(_REN, &aquaRange);
+
+		_SDL_RenderPresent(_REN);
+	end
+end
+
+escape 0;
